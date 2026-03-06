@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, Download } from 'lucide-react';
+import { X, Heart } from 'lucide-react';
 import { PHOTOS } from '../data/constants';
 
 const Gallery: React.FC = () => {

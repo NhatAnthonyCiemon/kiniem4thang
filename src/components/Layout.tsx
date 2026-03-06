@@ -105,7 +105,7 @@ const Layout: React.FC = () => {
                 </motion.button>
             </div>
 
-            <audio ref={audioRef} src="/music/bg.mp3" loop />
+            <audio ref={audioRef} src="/bg.mp3" loop />
         </div>
     );
 };

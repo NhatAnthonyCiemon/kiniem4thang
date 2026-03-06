@@ -191,26 +191,23 @@ const Home: React.FC = () => {
 
                 {/* Features Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {features.map((feature, index) => {
-                        const Icon = feature.icon;
-                        return (
-                            <Link key={feature.to} to={feature.to}>
-                                <motion.div
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: index * 0.1 }}
-                                    whileHover={{ scale: 1.05, y: -5 }}
-                                    className="glass p-6 rounded-2xl hover:shadow-2xl transition-all cursor-pointer group"
-                                >
-                                    <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 mx-auto group-hover:rotate-12 transition-transform`}>
-                                        <span className="text-3xl">{feature.emoji}</span>
-                                    </div>
-                                    <h3 className="text-xl font-bold mb-2 text-gray-800">{feature.title}</h3>
-                                    <p className="text-gray-600">{feature.description}</p>
-                                </motion.div>
-                            </Link>
-                        );
-                    })}
+                    {features.map((feature, index) => (
+                        <Link key={feature.to} to={feature.to}>
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: index * 0.1 }}
+                                whileHover={{ scale: 1.05, y: -5 }}
+                                className="glass p-6 rounded-2xl hover:shadow-2xl transition-all cursor-pointer group"
+                            >
+                                <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 mx-auto group-hover:rotate-12 transition-transform`}>
+                                    <span className="text-3xl">{feature.emoji}</span>
+                                </div>
+                                <h3 className="text-xl font-bold mb-2 text-gray-800">{feature.title}</h3>
+                                <p className="text-gray-600">{feature.description}</p>
+                            </motion.div>
+                        </Link>
+                    ))}
                 </div>
             </motion.div>
         </div>

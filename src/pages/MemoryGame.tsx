@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RotateCcw, Trophy } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 interface Card {
   id: number;
@@ -23,7 +23,7 @@ const MemoryGame: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isPlaying && !isWon) {
       interval = setInterval(() => {
         setTimeElapsed((prev) => prev + 1);
@@ -157,9 +157,8 @@ const MemoryGame: React.FC = () => {
                 >
                   {/* Back */}
                   <div
-                    className={`absolute inset-0 glass rounded-xl sm:rounded-2xl flex items-center justify-center backface-hidden ${
-                      card.isMatched ? 'opacity-0' : ''
-                    }`}
+                    className={`absolute inset-0 glass rounded-xl sm:rounded-2xl flex items-center justify-center backface-hidden ${card.isMatched ? 'opacity-0' : ''
+                      }`}
                   >
                     <div className="text-3xl sm:text-4xl">❓</div>
                   </div>

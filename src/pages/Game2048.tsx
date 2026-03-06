@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RotateCcw, Trophy } from 'lucide-react';
 
@@ -76,9 +76,6 @@ const Game2048 = () => {
 
         const transpose = (matrix: Board): Board =>
             matrix[0].map((_, i) => matrix.map(row => row[i]));
-
-        const reverse = (matrix: Board): Board =>
-            matrix.map(row => [...row].reverse());
 
         if (direction === 'left') {
             for (let i = 0; i < 4; i++) {

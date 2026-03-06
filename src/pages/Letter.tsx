@@ -1,7 +1,5 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Heart } from 'lucide-react';
-import { COUPLE_INFO } from '../data/constants';
 
 const Letter: React.FC = () => {
     return (
