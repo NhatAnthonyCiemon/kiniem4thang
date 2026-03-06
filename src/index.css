@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  body {
+    @apply bg-gradient-to-br from-pink-50 via-rose-50 to-purple-50 min-h-screen;
+    /* Safe area for iOS notch */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  /* Improve touch scrolling on mobile */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-xl;
+  }
+  
+  .glass-pink {
+    @apply bg-pink-100/50 backdrop-blur-lg border border-pink-200/30 shadow-xl;
+  }
+  
+  /* Touch-friendly button sizes */
+  .btn-touch {
+    @apply min-h-[44px] min-w-[44px] px-4 py-3;
+  }
+  
+  /* Optimized for mobile */
+  .mobile-container {
+    @apply px-3 sm:px-4 md:px-6;
+  }
+  
+  /* Prevent text selection on interactive elements */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+}
