@@ -1,215 +1,219 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Heart, Calendar, Image, Clock, Gamepad2, MessageSquare } from 'lucide-react';
-import { COUPLE_INFO } from '../data/constants';
+import React, { useEffect, useRef, useState } from 'react';
+import { createReogrid } from '@reogrid/lite';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import './home.css';
+import initReoGrid from '../helper/initGrid';
+import { upsertCellValue } from '../store/reogridSlice';
+import type { ReogridState } from '../types';
 
 const Home: React.FC = () => {
-    const [daysTogether, setDaysTogether] = useState(0);
-    const [timeUnits, setTimeUnits] = useState({
-        months: 0,
-        days: 0,
-        hours: 0,
-        minutes: 0,
-        seconds: 0,
-    });
+    const gridRef = useRef<HTMLDivElement | null>(null);
+    const worksheetRef = useRef<ReturnType<typeof createReogrid>['worksheet'] | null>(null);
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
+    const dispatch = useAppDispatch();
+    const demo = useAppSelector((state) => state.reogrid);
+
+    const escapeHtml = (input: string): string =>
+        input
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+    const buildPdfHtml = (state: ReogridState): string => {
+        const mergeMap = new Map<string, { rowspan: number; colspan: number }>();
+        const coveredCells = new Set<string>();
+
+        state.merges.forEach((merge) => {
+            const rowspan = merge.bottomRow - merge.topRow + 1;
+            const colspan = merge.rightColumn - merge.leftColumn + 1;
+            mergeMap.set(`${merge.topRow}:${merge.leftColumn}`, { rowspan, colspan });
+
+            for (let row = merge.topRow; row <= merge.bottomRow; row += 1) {
+                for (let column = merge.leftColumn; column <= merge.rightColumn; column += 1) {
+                    if (row === merge.topRow && column === merge.leftColumn) {
+                        continue;
+                    }
+                    coveredCells.add(`${row}:${column}`);
+                }
+            }
+        });
+
+        const cellMap = new Map<string, { value?: string; style?: ReogridState['cells'][number]['style'] }>();
+        state.cells.forEach((cell) => {
+            cellMap.set(`${cell.row}:${cell.column}`, { value: cell.value, style: cell.style });
+        });
+
+        const colgroup = Array.from({ length: state.columnCount }, (_, index) => {
+            const width = state.columnWidths[index] ?? 90;
+            return `<col style="width:${width}px" />`;
+        }).join('');
+
+        const rowsHtml = Array.from({ length: state.rowCount }, (_, rowIndex) => {
+            const height = state.rowHeights[rowIndex] ?? 34;
+            const cellsHtml = Array.from({ length: state.columnCount }, (_, colIndex) => {
+                const key = `${rowIndex}:${colIndex}`;
+                if (coveredCells.has(key)) {
+                    return '';
+                }
+
+                const merge = mergeMap.get(key);
+                const cell = cellMap.get(key);
+                const inlineStyles: string[] = [
+                    'padding:4px 6px',
+                    'white-space:pre-wrap',
+                    'word-break:break-word',
+                    `font-size:${cell?.style?.fontSize ?? 12}px`,
+                    `font-weight:${cell?.style?.bold ? '700' : '400'}`,
+                    `font-style:${cell?.style?.italic ? 'italic' : 'normal'}`,
+                    `text-align:${cell?.style?.textAlign === 'general' ? 'left' : (cell?.style?.textAlign ?? 'left')}`,
+                    `vertical-align:${cell?.style?.verticalAlign === 'middle' ? 'middle' : (cell?.style?.verticalAlign ?? 'middle')}`,
+                    `color:${cell?.style?.color ?? '#2b3138'}`,
+                    `background:${cell?.style?.backgroundColor ?? 'transparent'}`,
+                ];
+
+                if (cell?.style?.underline) {
+                    inlineStyles.push('text-decoration:underline');
+                }
+
+                // Build per-cell border styles — each side only applies to cells on the boundary edge of the range.
+                // For merged cells, use their actual visual extent (colspan/rowspan) for right/bottom edge checks.
+                const cellColspan = merge?.colspan ?? 1;
+                const cellRowspan = merge?.rowspan ?? 1;
+                const sideBorderMap: Record<string, string> = {};
+                (state.borders ?? []).forEach((b) => {
+                    if (
+                        rowIndex >= b.topRow && rowIndex <= b.bottomRow &&
+                        colIndex >= b.leftColumn && colIndex <= b.rightColumn
+                    ) {
+                        const css = `${b.border.width ?? 1}px ${b.border.style ?? 'solid'} ${b.border.color}`;
+                        (b.sides ?? []).forEach((side) => {
+                            if (side === 'top' && rowIndex === b.topRow) sideBorderMap['top'] = css;
+                            if (side === 'bottom' && rowIndex + cellRowspan - 1 === b.bottomRow) sideBorderMap['bottom'] = css;
+                            if (side === 'left' && colIndex === b.leftColumn) sideBorderMap['left'] = css;
+                            if (side === 'right' && colIndex + cellColspan - 1 === b.rightColumn) sideBorderMap['right'] = css;
+                        });
+                    }
+                });
+
+                if (sideBorderMap['top']) inlineStyles.push(`border-top:${sideBorderMap['top']}`);
+                if (sideBorderMap['bottom']) inlineStyles.push(`border-bottom:${sideBorderMap['bottom']}`);
+                if (sideBorderMap['left']) inlineStyles.push(`border-left:${sideBorderMap['left']}`);
+                if (sideBorderMap['right']) inlineStyles.push(`border-right:${sideBorderMap['right']}`);
+
+                const rowspanAttr = merge ? ` rowspan="${merge.rowspan}"` : '';
+                const colspanAttr = merge ? ` colspan="${merge.colspan}"` : '';
+
+                return `<td${rowspanAttr}${colspanAttr} style="${inlineStyles.join(';')}">${escapeHtml(cell?.value ?? '')}</td>`;
+            }).join('');
+
+            return `<tr style="height:${height}px">${cellsHtml}</tr>`;
+        }).join('');
+
+        return `
+            <div style="width:1122px;padding:24px;background:#ffffff;color:#2b3138;font-family:'Noto Sans JP',sans-serif;">
+                <table style="border-collapse:collapse;table-layout:fixed;width:100%;">
+                    <colgroup>${colgroup}</colgroup>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+        `;
+    };
+
+    const exportGridPDF = async () => {
+        if (isExportingPdf) {
+            return;
+        }
+
+        setIsExportingPdf(true);
+        const printNode = document.createElement('div');
+        printNode.style.position = 'fixed';
+        printNode.style.left = '-99999px';
+        printNode.style.top = '0';
+        printNode.style.zIndex = '-1';
+        printNode.innerHTML = buildPdfHtml(demo);
+        document.body.appendChild(printNode);
+
+        try {
+            const canvas = await html2canvas(printNode.firstElementChild as HTMLElement, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+            });
+
+            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 8;
+            const imgWidth = pageWidth - margin * 2;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            const imgData = canvas.toDataURL('image/png');
+
+            let renderedHeight = 0;
+            let pageIndex = 0;
+            while (renderedHeight < imgHeight) {
+                if (pageIndex > 0) {
+                    pdf.addPage();
+                }
+
+                const yOffset = margin - renderedHeight;
+                pdf.addImage(imgData, 'PNG', margin, yOffset, imgWidth, imgHeight);
+                renderedHeight += pageHeight - margin * 2;
+                pageIndex += 1;
+            }
+
+            pdf.save(`${demo.title || 'grid'}.pdf`);
+        } catch (error) {
+            console.error('Export PDF failed:', error);
+        } finally {
+            document.body.removeChild(printNode);
+            setIsExportingPdf(false);
+        }
+    };
 
     useEffect(() => {
-        const calculateTime = () => {
-            const now = new Date();
-            const diff = now.getTime() - COUPLE_INFO.startDate.getTime();
+        if (!gridRef.current) {
+            return;
+        }
 
-            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-            setDaysTogether(days);
+        const { worksheet, destroy } = createReogrid({ workspace: gridRef.current });
+        worksheetRef.current = worksheet;
 
-            const months = Math.floor(days / 30);
-            const remainingDays = days % 30;
-            const hours = now.getHours();
-            const minutes = now.getMinutes();
-            const seconds = now.getSeconds();
+        initReoGrid({ worksheet, demo });
+        const unsubscribeCellValueChange = worksheet.onCellValueChange(({ row, column, value }) => {
+            dispatch(upsertCellValue({ row, column, value }));
+        });
 
-            setTimeUnits({ months, days: remainingDays, hours, minutes, seconds });
+        return () => {
+            unsubscribeCellValueChange();
+            worksheetRef.current = null;
+            destroy();
         };
-
-        calculateTime();
-        const interval = setInterval(calculateTime, 1000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    const features = [
-        {
-            to: '/gallery',
-            icon: Image,
-            title: 'Album Ảnh',
-            description: 'Những khoảnh khắc đẹp nhất',
-            color: 'from-pink-500 to-rose-500',
-            emoji: '📸',
-        },
-        {
-            to: '/timeline',
-            icon: Clock,
-            title: 'Dòng Thời Gian',
-            description: 'Hành trình của chúng ta',
-            color: 'from-purple-500 to-pink-500',
-            emoji: '⏰',
-        },
-        {
-            to: '/memory-game',
-            icon: Gamepad2,
-            title: 'Mini Game',
-            description: 'Trò chơi ghép hình vui nhộn',
-            color: 'from-blue-500 to-purple-500',
-            emoji: '🎮',
-        },
-        {
-            to: '/quiz',
-            icon: MessageSquare,
-            title: 'Love Quiz',
-            description: 'Làm tí quiz vui vui',
-            color: 'from-rose-500 to-pink-500',
-            emoji: '❓',
-        },
-        {
-            to: '/love-calculator',
-            icon: Heart,
-            title: 'Love Calculator',
-            description: 'Tính độ hợp nhau',
-            color: 'from-red-500 to-rose-500',
-            emoji: '💝',
-        },
-        {
-            to: '/letter',
-            icon: Heart,
-            title: 'Thư Tình',
-            description: 'Lời yêu thương dành cho em',
-            color: 'from-red-500 to-pink-500',
-            emoji: '💌',
-        },
-        {
-            to: '/truth-or-dare',
-            icon: MessageSquare,
-            title: 'Truth or Dare',
-            description: 'Thật hay thách',
-            color: 'from-teal-500 to-cyan-500',
-            emoji: '💭',
-        },
-
-    ];
+        // Initialize once; subsequent user edits are captured by onCellValueChange.
+    }, [dispatch]);
 
     return (
-        <div className="container mx-auto px-3 sm:px-4 md:px-6 pt-20 sm:pt-24 pb-8 sm:pb-12">
-            {/* Hero Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-center mb-8 sm:mb-12"
-            >
-                <motion.div
-                    className="text-6xl sm:text-7xl md:text-8xl mb-4 sm:mb-6"
-                    animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                >
-                    💕
-                </motion.div>
-
-                <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-bold mb-3 sm:mb-4 px-2 bg-gradient-to-r from-pink-500 via-rose-500 to-purple-500 bg-clip-text text-transparent">
-                    Kỷ Niệm 4 Tháng Yêu Nhau
-                </h1>
-
-                <div className="flex flex-col md:flex-row items-center justify-center gap-3 sm:gap-4 md:gap-8 mb-6 sm:mb-8">
-                    <motion.div
-                        className="glass-pink px-6 sm:px-8 py-3 sm:py-4 rounded-2xl"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.98 }}
+        <div className="demo-page">
+            <header className="demo-header">
+                <h1>{demo.title}</h1>
+                <div className="demo-header-actions">
+                    <button
+                        type="button"
+                        className="export-pdf-btn"
+                        onClick={exportGridPDF}
+                        disabled={isExportingPdf}
                     >
-                        <p className="text-lg sm:text-xl md:text-2xl font-bold text-rose-600">{COUPLE_INFO.boy}</p>
-                    </motion.div>
-
-                    <motion.div
-                        className="text-3xl sm:text-4xl"
-                        animate={{ scale: [1, 1.2, 1] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                    >
-                        💗
-                    </motion.div>
-
-                    <motion.div
-                        className="glass-pink px-6 sm:px-8 py-3 sm:py-4 rounded-2xl"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.98 }}
-                    >
-                        <p className="text-lg sm:text-xl md:text-2xl font-bold text-rose-600">{COUPLE_INFO.girl}</p>
-                    </motion.div>
+                        {isExportingPdf ? 'Dang xuat...' : 'Export PDF'}
+                    </button>
+                    <a href="https://web.reogrid.net" target="_blank" rel="noreferrer">
+                        web.reogrid.net
+                    </a>
                 </div>
-
-                {/* Countdown */}
-                <div className="glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl max-w-4xl mx-auto mb-6 sm:mb-8">
-                    <div className="flex items-center justify-center gap-2 mb-4 sm:mb-6 flex-wrap">
-                        <Calendar className="text-pink-500" size={20} />
-                        <p className="text-sm sm:text-base md:text-lg text-gray-600 text-center">
-                            Bắt đầu từ: {COUPLE_INFO.startDate.toLocaleDateString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                            })}
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3 md:gap-4">
-                        {[
-                            { label: 'Tháng', value: timeUnits.months },
-                            { label: 'Ngày', value: timeUnits.days },
-                            { label: 'Giờ', value: timeUnits.hours },
-                            { label: 'Phút', value: timeUnits.minutes },
-                            { label: 'Giây', value: timeUnits.seconds },
-                        ].map((unit, index) => (
-                            <motion.div
-                                key={unit.label}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.1 }}
-                                className={`bg-gradient-to-br from-pink-500 to-rose-500 p-3 sm:p-4 md:p-6 rounded-xl sm:rounded-2xl text-white ${index >= 3 ? 'col-span-1 sm:col-span-1' : ''
-                                    }`}
-                            >
-                                <div className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{unit.value}</div>
-                                <div className="text-xs sm:text-sm font-medium opacity-90">{unit.label}</div>
-                            </motion.div>
-                        ))}
-                    </div>
-
-                    <motion.p
-                        className="text-2xl sm:text-3xl font-bold text-transparent bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text mt-4 sm:mt-6"
-                        animate={{ scale: [1, 1.05, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                    >
-                        {daysTogether} ngày bên nhau ❤️
-                    </motion.p>
-                </div>
-
-                {/* Features Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {features.map((feature, index) => (
-                        <Link key={feature.to} to={feature.to}>
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.1 }}
-                                whileHover={{ scale: 1.05, y: -5 }}
-                                className="glass p-6 rounded-2xl hover:shadow-2xl transition-all cursor-pointer group"
-                            >
-                                <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 mx-auto group-hover:rotate-12 transition-transform`}>
-                                    <span className="text-3xl">{feature.emoji}</span>
-                                </div>
-                                <h3 className="text-xl font-bold mb-2 text-gray-800">{feature.title}</h3>
-                                <p className="text-gray-600">{feature.description}</p>
-                            </motion.div>
-                        </Link>
-                    ))}
-                </div>
-            </motion.div>
+            </header>
+            <div className="demo-hint">{demo.hint}</div>
+            <div ref={gridRef} className="demo-grid" />
         </div>
     );
 };
